@@ -1,0 +1,3 @@
+interface:
+  display_name: "Engineering Principles Expert"
+  short_description: "Expert in software engineering principles (SOLID, DRY, KISS, YAGNI, modularity, composition). Use when writing, reviewing, refactoring, or designing code; when the user asks for clean code, coding standards, or professional engineering; or when friction appears (duplication, rigidity, surprise, shallow modules)."
