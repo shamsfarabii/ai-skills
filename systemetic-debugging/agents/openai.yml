@@ -1,0 +1,3 @@
+interface:
+  display_name: "Systematic Debugging — Interactive Mode"
+  short_description: "Interactive, evidence-driven software debugging for an existing codebase. Use when asked to investigate a bug, unexpected behavior, regression, race condition, duplicate API request, stale UI, performance issue, or to understand an existing feature before fixing it. Trace current workflow and data flow, reproduce and isolate symptoms, prove or qualify the root cause, explain it with examples, compare fixes and trade-offs, request approval before code changes, implement focused tests and fixes, independently review the diff, audit edge cases, and produce a verification report."
