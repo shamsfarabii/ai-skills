@@ -1,80 +1,100 @@
 ---
 name: code-explanation-tracer
-description: Explain a specific code snippet, function, hook, component, class, query, algorithm, or source file in plain language. Use when a user asks what code does, why it exists or was written this way, which real problem it solves, how its data flows, or wants to deeply understand or review an implementation. Teach with realistic mock inputs, intermediate values, step-by-step execution traces, concrete examples, alternatives, edge cases, and design trade-offs. Support any programming language and adapt depth to the user's request.
+description: Explain what existing code does and why, in plain language anyone can follow. Use when the user shares or points to code (a snippet, function, component, hook, class, SQL query, regex, shell script, config, algorithm, or whole file, in any language) and asks what it does, how it works, how data flows through it, why it is written this way, or why it produces a certain result or bug. Also use when they want to understand code before reviewing or changing it. Works for any experience level, including non-programmers. Do not use for writing new code or refactoring unless the user first wants the existing code explained.
 ---
 
 # Code Explanation Tracer
 
-Teach **why the code exists** before explaining syntax. Make its behavior concrete enough that the user could predict what it will do with a new input.
+Goal: the reader understands **why the code exists** and can **predict its output for a new input**. Explain purpose before syntax. Show real values before abstract descriptions.
 
-## Core workflow
+## Steps
 
-1. **Establish the evidence.** Read the supplied snippet/file and the relevant caller, types, helper functions, state, or API contracts when available. If a repository is accessible and necessary, inspect only the dependencies that materially affect behavior. Never claim to have inspected or run code that was not actually available or executed.
-2. **Find its responsibility.** Identify its entry point, inputs, outputs, side effects, dependencies, and boundary with other code. For an entire file, first map its main units; then trace the important path(s) rather than explaining unrelated imports line by line.
-3. **State the problem.** Explain the user-visible or engineering problem this code addresses. Contrast **before (without it)** with **after (with it)**. Distinguish a problem verified by code, tests, comments, or user context from a plausible inferred motivation; label inference explicitly. Never invent a bug report, business requirement, or past design decision.
-4. **Explain the approach.** Summarize the algorithm or control flow in ordinary language before introducing detailed syntax. Explain *why* meaningful constructs (e.g., `Map`, `Set`, `useEffect`, memoization, debounce, transaction, retry, cache, queue) are used **here**, not with generic textbook definitions.
-5. **Run a tiny example mentally.** Create the smallest realistic mock input that demonstrates the core behavior. Use names and values that make changes easy to see. Clearly mark mock values as illustrative, not actual production data. Trace the input through the **actual** statements and branches in order, showing intermediate variables, state updates, transformations, and final result.
-6. **Explain the trade-off.** Compare the current approach with one reasonable naive or simpler alternative. Show the specific issue with that alternative, when the chosen design is justified, and what complexity or costs it introduces. If the code is unnecessarily complicated or flawed, say so rather than inventing justification.
-7. **Check failure paths.** Walk through relevant empty input, missing values, duplicates, errors, async races, stale closures, concurrency, performance, type safety, security, or resource cleanup. Select only cases that apply. Distinguish what the implementation actually handles from gaps to test.
-8. **Verify understanding.** Finish with a compact mental model and one fresh input or scenario the learner can predict. Give the expected answer when it is useful, or invite a prediction if the learner prefers practice.
+Work through these in order. Each step's output becomes one section of the answer, using the heading shown.
 
-## Default response structure
+### 1. Read and ground (internal, no heading)
+- Read the code the user supplied. If a repository or files are available, open only the callers, types, and helpers that change the behavior.
+- List for yourself what you **saw** and what you **did not see**, such as unseen helpers, imports, or config.
+- **Output:** a short internal note of the code's inputs, outputs, side effects (network, database, file, DOM, or state changes), and any unknowns.
 
-Adjust length to complexity; for a short snippet, combine headings rather than padding. For a large file, group related functions and repeat the trace only when a new behavior matters.
+### 2. Set the reader level (internal, no heading)
+- If the user stated their level, or their wording makes it obvious, match it.
+- Otherwise, default to **plain**: assume the reader is smart but may not know this language or framework.
+- **Output:** the chosen level. Plain level applies the rules under "Plain-language rules" fully. Expert level may skip basic definitions.
 
-### 1. What problem does this solve?
-- One- or two-sentence purpose in everyday language.
-- **Without this code:** a specific observable failure, inefficiency, or missing capability (label hypotheses).
-- **With this code:** what changes.
+### 3. "What problem does this solve?"
+- Write 1–2 sentences on what the code does, in everyday words with no jargon.
+- **Without it:** describe one concrete failure or missing capability.
+- **With it:** describe what changes for the user or the system.
+- If the purpose is not stated in the code, comments, tests, or the user's message, start that line with "Likely:". Never invent bug reports, business requirements, or past design decisions.
+- Add a one-line flow like `click -> handler -> filter -> setState -> re-render`, using only steps that actually appear in the source.
 
-### 2. The big picture
-- Identify the exact inputs, outputs, and important side effects.
-- Show a compact flow such as `UI event -> handler -> filter -> state update -> render` **only if consistent with the source**.
-- Explain where the code fits in the larger feature when enough context exists.
+### 4. "Step by step with an example"
+- Build the smallest realistic mock input, usually 2–4 items, with names and values that make changes easy to spot. Label it "example data".
+- Trace it through the **actual** statements in execution order. After each meaningful step, show the current value of the variables that changed.
+  - For loops, use a table with one row per iteration and columns for the variables that change.
+  - For object or state updates, show the value before and after.
+  - For async code (callbacks, promises, `await`, events, effects), show a numbered timeline that separates when code is **declared**, when it **runs**, and when it is **cleaned up**.
+- State the exact final value or visible effect, and explain why it follows from the trace.
+- If another branch would change the result (an `if`, an early `return`, a `catch`), trace it briefly with a second input.
 
-### 3. Step-by-step example with mock data
-- Show small, readable mock input (usually 2-5 items), with types or shapes where helpful.
-- Trace the true order of execution in numbered steps. Include intermediate data after each meaningful transformation.
-- Use a small table for successive iterations, or before/after values for object updates. For asynchronous code, show the timeline and what each `await`, event, promise, or subscription changes.
-- Show the exact final value or visible UI effect, and explain **why** that result follows.
-- Trace at least one alternate branch if it changes the answer.
+### 5. "Why it's written this way" and "What could go wrong"
+- For each important construct (for example a `Map`, a memo, a debounce, a transaction, a retry, an index, or a regex group), say what it does **here**, not its textbook definition.
+- Show one simpler or naive alternative and what concretely breaks or gets worse with it. Then state the cost of the current approach.
+- Do not claim performance gains without a measurement or a complexity argument.
+- If the code is flawed or more complicated than it needs to be, say so plainly. Do not invent a justification.
+- List 2–4 edge cases that actually apply, such as empty input, missing or null values, duplicates, case sensitivity, errors, race conditions, stale closures, security, or cleanup.
+  - For each one, give a tiny input, what the code does, and whether that is handled or is a gap worth testing.
 
-### 4. Why is it written this way?
-- Connect every important design decision to a constraint or behavior; mark unsupported rationale as a hypothesis.
-- Demonstrate a naive approach first when it clarifies the benefit, then compare it to the current approach.
-- Explain practical trade-offs (readability, correctness, time/space, re-renders, network calls, ordering, failure recovery) only when relevant. Do not claim performance wins without measurements or a sound complexity argument.
+### 6. "In one sentence"
+- Give an accurate one-sentence mental model.
+- Then give one fresh input and ask the reader to predict the result, with the answer shown below it.
 
-### 5. What could go wrong?
-- Illustrate 2-4 important edge cases with tiny inputs and expected outcomes.
-- Note unhandled cases, implicit assumptions, mutation, ordering, race conditions, security implications, and what a targeted test should assert when applicable.
+## Plain-language rules
 
-### 6. One-sentence mental model
-- Give a memorable, technically accurate summary, then optionally a tiny prediction exercise.
+- Define every technical term the first time it appears, in a few words in parentheses. Example: "callback (a function handed over to be run later)".
+- Keep to one idea per sentence. Prefer short words.
+- Use an everyday analogy only when it clarifies something, then immediately map it back to the code. Example: "Like a sticky note on the fridge: `cache` remembers the last answer so we don't recompute it."
+- Show values, not descriptions. Write "`total` goes from `0` to `12`" rather than "the total is updated".
+- Quote short pieces of the source when discussing them. Do not paste the whole file back.
 
-## How to explain individual lines
+## Matching depth to the code
 
-For a request to explain *every part* of a file, annotate each meaningful statement or logical block in source order using:
+- **Under ~20 lines:** merge sections 3–5 into a few short paragraphs, keeping the trace. Skip the trade-off discussion if there is no meaningful alternative.
+- **Whole file or more than ~150 lines:** start with a map of its main parts (one line each). Trace the single most important path in full. Summarize the other parts briefly, and offer to trace any of them next.
+- **The user asks for every line:** go through each meaningful statement or block in source order, giving three things:
+  - **What:** what the statement does.
+  - **Why:** why the code needs it.
+  - **Effect:** how the values change, using the example data.
 
-- **What:** the direct language/runtime behavior.
-- **Why:** why the operation is needed for the identified problem.
-- **Effect:** how input/state/output changes after this line.
+  Skip trivial boilerplate unless the user asks about it.
+- **The user asks about a bug:** reconstruct the failing path with an input that triggers it. Then say how to reproduce it and how to verify a fix. Suggest a fix only after that, and keep it separate from the explanation.
 
-Expand unfamiliar operators and framework behavior using a concrete value. Skip trivial syntax or boilerplate unless the user asks about it. For callbacks, closures, hooks, and asynchronous paths, explicitly separate **declaration time**, **invocation time**, and **cleanup**. For state libraries, identify ownership and whether data is local/client state, server state, or a derived value; never assume hidden state behavior.
+## Edge cases in the request itself
 
-## Fidelity and teaching rules
+- **No code is visible:** ask the user to paste it or name the file. Do not guess.
+- **A helper or import is not shown:** write "The behavior of `helperName` can't be confirmed from this code." Then describe only what the call site proves, such as its arguments and how its result is used.
+- **The code looks truncated or partial:** explain what is present and note where it cuts off.
+- **The library or framework version is unclear and it matters:** state the assumption you are making, for example "Assuming React 18 behavior".
+- **The code was not executed:** you traced it by reading, so say "traced by reading" if anyone could think it was run. Never claim to have run code you did not run.
+- **The name, comment, and implementation disagree:** point out the contradiction. Explain what the code actually does.
+- **The code is minified, obfuscated, or pseudocode:** say so, and rename variables in your explanation for readability while showing the mapping.
+- **Key behavior depends on missing context:** ask **one** targeted question. If a useful explanation is possible without it, give the explanation and state the uncertainty instead of asking.
 
-- Ground all explanations in the actual source; do not silently fill in missing implementation details. If a helper is unseen, write `The behavior of helperName cannot be confirmed from this snippet` and describe only what the call proves.
-- Keep mock data consistent across the trace and preserve the code's exact semantics, including return order, mutation, coercion, reference equality, and exception behavior.
-- Do not confuse intended behavior with proven behavior. Flag contradictions between names/comments and implementation.
-- Use short language and concrete analogies only where they increase understanding; define jargon on first use.
-- Prefer small snippets copied from the supplied code over repeating an entire file. Do not rewrite or refactor unless requested; separate optional suggestions from the explanation.
-- For a bug or code-review request, reconstruct the failure path before proposing a fix, and state how to reproduce and verify it.
-- If the code is long, start with a dependency map and the highest-impact execution path; cover additional units without losing the end-to-end story.
-- Do not ask for more context when a useful explanation is already possible. Ask **one targeted question** only if the missing behavior is essential; otherwise explicitly state the uncertainty.
+## Correctness rules (always apply)
 
-## Calibrating example
+- Preserve the code's exact semantics in the trace: evaluation order, mutation versus copy, type coercion, reference equality, integer versus float behavior, return order, and exceptions.
+- Keep example data consistent across every step.
+- Keep proven behavior separate from intended or likely behavior.
+- Do not rewrite or refactor unless asked. Put optional improvements in a clearly labeled final note.
 
-Given:
+## Before sending, check
+
+- Can a reader who doesn't know this language follow section 3?
+- Does every value in the trace follow from the code as written?
+- Is every guess labeled "Likely:" or stated as an assumption?
+- Does the prediction exercise have a correct answer?
+
+## Reference example
 
 ```ts
 function getReadyEmails(rows: { email: string; status: string }[]) {
@@ -84,14 +104,11 @@ function getReadyEmails(rows: { email: string; status: string }[]) {
 }
 ```
 
-A good explanation demonstrates:
-
-- **Problem:** the caller needs only email addresses of ready rows, not every row object.
-- **Mock input:** `[{ email: "a@example.com", status: "ready" }, { email: "b@example.com", status: "invalid" }, { email: "c@example.com", status: "ready" }]`.
-- **Step 1:** `filter` keeps the first and third objects and discards the invalid row.
-- **Step 2:** `map` converts those two objects into `["a@example.com", "c@example.com"]`.
-- **Why two operations:** `filter` decides *which* items remain; `map` decides *what shape* to return. A single `reduce` could do both but would be less direct for this simple case.
-- **Important limitation:** matching is case-sensitive: `"READY"` is not included; empty input returns `[]`.
-- **Mental model:** *Select qualifying records, then extract just the field the caller needs.*
-
-For more complex code, go deeper than this example: show intermediate state, call sequence, exceptional branches, and why implementation details matter.
+- **Problem:** the caller needs only the email addresses of rows that are ready, not the whole row objects.
+- **Example data:** `[{email:"a@x.com",status:"ready"}, {email:"b@x.com",status:"invalid"}, {email:"c@x.com",status:"ready"}]`
+- **Step 1:** `filter` (keeps items that pass a test) keeps rows a and c → `[{a…}, {c…}]`.
+- **Step 2:** `map` (turns each item into something else) extracts the email from each → `["a@x.com", "c@x.com"]`.
+- **Why two steps:** `filter` decides *which* items stay and `map` decides *what shape* to return. A single `reduce` could do both, but it would be harder to read for a case this simple.
+- **Edge cases:** the comparison is case-sensitive, so `"READY"` is excluded. An empty array returns `[]`.
+- **In one sentence:** keep the ready rows, then pull out just their emails.
+- **Predict:** for `[{email:"d@x.com",status:"Ready"}]`, the result is `[]`, because `"Ready"` does not exactly match `"ready"`.

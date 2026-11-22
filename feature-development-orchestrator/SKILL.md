@@ -1,60 +1,200 @@
 ---
 name: feature-development
-description: Orchestrate new software features from discovery through approval using a reusable, file-based workflow. Use when a developer wants to be grilled on business requirements, investigate a codebase, generate a feature-specific SKILL.md and independent task plans, implement a planned subtask in a fresh chat, critically review an implementation, resume progress, or finish a feature. Maintain durable requirements, decisions, task status, and evidence instead of relying on conversation history.
+description: File-based, approval-gated workflow for building a new software feature across multiple chats, with state stored in `.ai/features/<slug>/`. Use when the user asks to start a new feature, be grilled/interviewed on its requirements, investigate a codebase for a feature, plan a feature into tasks, implement / review / approve a task ID (e.g. "implement T03"), resume or replan a feature, or do a final feature review. Do not use for one-off bug fixes or small edits that need no requirements or plan.
 ---
 
-# Feature Development Orchestrator
+# Feature Development
 
-Run a **file-first, approval-gated** feature lifecycle. The reusable skill is the process; each generated `.ai/features/<feature-slug>/` directory is the feature-specific source of truth. A feature-local `SKILL.md` is an instruction file for agents reading that repository; it is **not automatically installed or discoverable** as a global skill. Load it explicitly in a fresh session unless the host supports repository-local skills.
+Feature state lives in `.ai/features/<slug>/`, not in chat history. Start every session by reading these files. After every meaningful decision, write it to them.
 
-## Operating rules
+```
+.ai/features/<slug>/
+  SKILL.md            # feature-local instructions (plain file, not an installed skill; read it explicitly)
+  requirements.md
+  architecture.md
+  master-plan.md
+  decisions.md        # append-only
+  tasks/T01-<slug>.md
+  handoffs/T01.md
+```
 
-1. First resolve the requested operation: `new feature` / `grill me` / `investigate` / `plan` / `implement <task-id>` / `review <task-id>` / `approve <task-id>` / `resume` / `replan` / `feature review`. If ambiguous, inspect feature files and ask one targeted question only when necessary.
-2. If a repository/workspace is available, read the existing feature files and relevant source before acting. If inaccessible, say so; don't fabricate codebase findings, APIs, test results, or file changes. You may provide draft artifacts clearly marked as provisional.
-3. Record outcomes in the feature directory after each meaningful decision. **Durable files, not chat history, govern resumed work.** Respect prior user approvals and never silently change confirmed requirements.
-4. Separate `CONFIRMED`, `ASSUMED`, `OPEN`, and `REJECTED` requirements. Ask for decisions on consequential unknowns; propose sensible, labeled defaults on minor ones. Do not fill in missing business rules as facts.
-5. Preserve user control. Require explicit approval of requirements before final planning, of the master plan before implementation, and of reviewed work before marking a task `approved`. Never claim user approval from a passing test.
-6. Prefer simple, established repository patterns. Avoid unrelated refactors and speculative abstractions. Validate external inputs and permission boundaries; prefer typed errors, idempotent mutations where appropriate, timeouts for network calls, and verified transactions/indexes where relevant. Do not force stack-specific patterns into other stacks.
-7. Be constructive but critical of proposed implementations: explain benefit, downside, meaningful failure modes, and an alternative **only if materially better**. If a requested approach is unsafe/incorrect, identify that before editing; distinguish blockers from preferences.
-8. Do not implement the entire feature during planning, or implement unapproved tasks. Make changes only within agreed task scope except necessary integration fixes, which must be explained and recorded.
-9. Review important edge cases by **likelihood x impact**; include common empty/error/permission/race/partial-success paths when relevant. Avoid exotic edge cases unless impact is high. Never equate compilation with runtime verification.
-10. Keep generated files concise, explicit, and linked by stable task IDs. Prefer a few coherent tasks over dozens of tiny edits. Define each task by a verifiable behavior or contract, not by arbitrary file boundaries.
+## Step 0: Choose the operation and load state
 
-## Lifecycle and phase gates
+1. Map the request to one operation: `discover`, `investigate`, `plan`, `implement Txx`, `review Txx`, `approve Txx`, `resume`, `replan`, or `feature review`. Ask one question only if the request is truly ambiguous.
+2. Read the feature's `SKILL.md`, `requirements.md`, `architecture.md`, `master-plan.md`, `decisions.md`, the relevant task file, and its latest handoff. If several feature directories exist and the slug is unclear, ask which one.
+3. Check the gate. If the gate isn't met, say which one is missing and offer the earlier step.
 
-### 1 — Grill me / discover
+| Operation | Gate |
+|---|---|
+| investigate | requirements.md approved by user |
+| plan | requirements approved; architecture.md exists |
+| implement Txx | master plan approved; all Txx dependencies `approved` |
+| review Txx | Txx is `in_review` |
+| approve Txx | review done, no open blockers, explicit user "approve" |
+| feature review | all tasks `approved` |
 
-Use `references/discovery.md`. Ask 3–5 related questions per round, waiting for answers before the next. Begin with problem, actors, workflow, and success; then explore business rules, auth, data, errors, boundaries, and non-goals. Show a short example/trace to confirm shared understanding. Summarize into `requirements.md` using `assets/requirements.template.md`. Present unresolved decisions. **Gate:** user approves the requirements baseline; otherwise remain in discovery.
+**Output:** one line stating the feature, the operation, and the current status.
 
-### 2 — Investigate the codebase
+## Step 1: Discover ("grill me")
 
-Read relevant existing code, documentation, contracts, tests, and current repository state. Find the smallest integration points, reusable patterns, side effects, and constraints. Create `architecture.md` using `assets/architecture.template.md`. Mark every file path and claim as `VERIFIED` or `TO VERIFY`; note commit/branch when available. If the repository is absent, stop short of asserting a final technical design. Do not refactor anything during investigation.
+1. Ask 3–5 related questions per round and wait for the answers. Cover topics in this order: problem and success measure, then actors and workflow, then business rules and permissions, then data and error cases, then non-goals.
+2. After each round, play back a short trace with mock data. Example: "Alice (manager) refunds a $40 order, so the status becomes `refunded` and the customer is emailed." Ask the user to correct it.
+3. Never invent business rules. Label every requirement with one of:
+   - `CONFIRMED`: the user said it.
+   - `ASSUMED`: your labeled default, for minor points only.
+   - `OPEN`: needs a decision.
+   - `REJECTED`: explicitly out of scope.
+4. Write `requirements.md` and list the OPEN items that need decisions.
 
-### 3 — Plan and generate a feature-local skill
+**Output:** `requirements.md`.
+**Gate:** the user explicitly approves. Record the date in the file. Until then, keep asking.
 
-Read `references/planning.md`, and generate `.ai/features/<feature-slug>/SKILL.md` from `assets/feature-skill.template.md`, `master-plan.md` from `assets/master-plan.template.md`, and `tasks/NN-<slug>.md` from `assets/task.template.md`. Also maintain `decisions.md` and `handoffs/`.
+## Step 2: Investigate the codebase
 
-Use task IDs `T01`, `T02`, etc. List dependencies, acceptance criteria, testing, actual integration boundaries, risks, and status. Every task must be executable with a fresh context **after reading the feature-local SKILL.md, requirements, architecture, master-plan, and that task**; avoid dependence on earlier chat. Include explicit commands only when verified in the repository. **Gate:** user approves the master plan before implementation.
+1. Record the branch and commit (`git rev-parse --abbrev-ref HEAD`, `git rev-parse --short HEAD`).
+2. Read the code this feature will touch: entry points, data models, the most similar existing feature, its tests, and the relevant config.
+3. Identify the smallest integration points, the patterns to reuse, side effects, and constraints (auth, transactions, migrations, external calls).
+4. Mark every path and claim `VERIFIED` (you read it) or `TO VERIFY`. Do not change any code.
 
-### 4 — Implement one task
+**Output:** `architecture.md`.
 
-Read `references/implementation.md`. Reload the feature-local instructions and relevant up-to-date source. Confirm dependencies and current state. Summarize objective, scope, approach, trade-offs. If the user proposes implementation logic, critically evaluate it before coding. Make focused changes only for the selected task. Run available focused checks; distinguish executed checks from suggested checks. Record deviations and evidence in a handoff file. Status -> `in_review`, **not** `approved`.
+## Step 3: Plan
 
-### 5 — Review one task
+1. Split the work into a few tasks (usually 3–8). Define each task by a verifiable behavior or contract, not by file boundaries. A task must be doable in a fresh chat by someone who has read only the feature files and that task file.
+2. Write `tasks/Txx-*.md`, `master-plan.md`, `decisions.md`, and the feature-local `SKILL.md`, and create `handoffs/`.
+3. Include build and test commands only if you found them in the repo (package scripts, Makefile, CI config). Otherwise write `TO VERIFY`.
 
-Read `references/review.md`. Compare actual diff against acceptance criteria and business rules, not merely the plan text. Rank findings as `blocker`, `important`, or `optional` and include precise repro conditions and fixes. Verify security, errors, races and regressions proportionally. Report what was not tested. Address findings upon user instruction; rerun relevant checks. **Gate:** only user approval moves task to `approved` (and updates master plan). If rejected, remain `in_progress`/`in_review` with reasons.
+**Output:** the plan files.
+**Gate:** the user approves the master plan. Record the date. Do not implement anything during planning.
 
-### 6 — Handoff, resume, integrate
+## Step 4: Implement one task (Txx)
 
-For `resume`, identify the feature directory, read current plan and handoff files, check repository state, and propose the next unblocked task. For `replan`, explain the impact and obtain approval before changing approved scope or dependencies. For feature completion, perform an end-to-end integration review spanning tasks, API/data contracts, migrations, UI states, permissions, and tests. **Gate:** user approves feature completion. Never mark it complete with outstanding blockers or unverified required acceptance criteria.
+1. Re-read the feature files and the current source the task touches, since the code may have changed. If a dependency isn't `approved`, set the task to `blocked` and stop.
+2. In 5 lines or fewer, state the objective, scope, approach, and main trade-off.
+3. If the user proposed an approach, evaluate it before coding: its benefit, its downside, and how it could fail. Offer an alternative only if it is materially better. If the approach is unsafe or incorrect, say so before editing, and separate blockers from preferences.
+4. Edit only within the task's scope and follow the repo's conventions. Integration fixes outside the scope are allowed only when necessary, and must be listed in the handoff. Make no unrelated refactors or speculative abstractions.
+5. Where relevant:
+   - validate external input and enforce permission checks;
+   - set timeouts on network calls;
+   - use transactions or idempotency where a partial failure could corrupt data.
+6. Run focused checks: tests, type checks, and lint for the touched code. Mark each check `EXECUTED` with its result, or `NOT RUN` with the reason. Compiling is not runtime verification.
+7. Write `handoffs/Txx.md` and set the status to `in_review` in both the task file and the master plan. Never set it to `approved` here.
 
-## Status and update discipline
+**Output:** a diff summary and the handoff file.
 
-- Task status: `not_started`, `in_progress`, `blocked`, `in_review`, `needs_replanning`, `approved`. Status is not a substitute for evidence.
-- Update the relevant task file, `master-plan.md`, `decisions.md` (for decisions), and `handoffs/Txx.md` (for implementation/review evidence). In multi-agent environments, serialize master-plan writes or nominate one owner; agents can write separate handoff files.
-- Preserve history of decisions and newly discovered constraints. Record links to commits/PRs when known. Do not invent them.
-- When ending a session, give a copyable fresh-chat starter: `Use the feature-development skill. Resume .ai/features/<slug>/ and implement Txx. Read its SKILL.md, requirements.md, architecture.md, master-plan.md, tasks/Txx-*.md, and latest handoff. Verify the current code before editing.`
+## Step 5: Review one task (Txx)
 
-## Output quality
+1. Get the actual diff against the base commit recorded in the handoff (`git diff <base>`). Compare it with the acceptance criteria and requirements, not just with the plan.
+2. Check these in order, skipping any that don't apply:
+   1. Every acceptance criterion is met.
+   2. Empty, error, and permission-denied paths are handled.
+   3. Partial success and retries are handled.
+   4. Concurrent writes to shared data are handled.
+   5. Callers have no regressions.
+   6. The tests actually exercise the behavior.
 
-Use concrete examples and small mock data to clarify business flows. Prefer practical acceptance criteria (`Given / When / Then`) and explicit success/failure states. Explain choices and trade-offs without lengthy generic architecture lectures. Honor local project conventions after inspection. If file-writing tools are unavailable, output the proposed files for the user to save rather than claiming they exist.
+   Skip exotic cases unless their impact is high.
+3. Report each finding as `blocker`, `important`, or `optional`, with its repro condition and a fix. List what was not tested.
+4. Fix findings only when the user says to. Rerun the relevant checks and append the results to the handoff.
+
+**Gate:** only explicit user approval sets the task to `approved` in the task file and the master plan. Passing tests are not approval. If the user rejects the work, set the task to `in_progress` and record the reasons.
+
+## Step 6: Resume, replan, finish
+
+- **Resume:** run Step 0. Compare `git status` and `git log` with the latest handoff, report any discrepancies, and propose the next unblocked task.
+- **Replan:** explain the impact on approved requirements, tasks, and dependencies. Change approved scope only after the user approves. Log the change in `decisions.md` and mark affected tasks `needs_replanning`.
+- **Feature review:** check the work end to end: API and data contracts across tasks, migrations, UI states, permissions, and whether the tests cover the requirements.
+  - **Gate:** the user approves completion.
+  - Never mark the feature complete while blockers remain open or required acceptance criteria are unverified.
+
+## Status and records
+
+- Task statuses are `not_started`, `in_progress`, `blocked`, `in_review`, `needs_replanning`, and `approved`. A status is not evidence; the handoff holds the evidence.
+- Never silently change a CONFIRMED requirement or an approved decision.
+- With multiple agents, one agent owns all writes to `master-plan.md`. Each other agent writes only its own handoff file.
+- Record commit or PR links only when they are known. Never invent them.
+
+## Edge cases
+
+- **No repository access:** run discovery normally. Mark the architecture and plan `PROVISIONAL`, with every claim `TO VERIFY`. Do not implement or review, and never fabricate code, APIs, or test results.
+- **No file-writing tools:** output each file's full content under its path and say the files are not saved. In the next session, ask the user to provide or confirm them.
+- **Feature directory not found:** list `.ai/features/`. If it is empty, ask whether to start discovery or have the user provide the files.
+- **Files disagree with the code:** trust the code for the current state and the approved files for intent. Report the gap instead of reconciling it silently.
+- **No test commands found:** say so, and list the suggested commands as `NOT RUN`.
+
+## Ending a session
+
+Give the user this starter to copy:
+`Use the feature-development skill. Resume .ai/features/<slug>/ and implement Txx. Read its SKILL.md, requirements.md, architecture.md, master-plan.md, tasks/Txx-*.md, and latest handoff. Verify the current code before editing.`
+
+## Templates
+
+**requirements.md**
+```
+# <Feature>: Requirements
+Status: draft | approved <date>
+## Problem & success measure
+## Actors
+## Workflow (example trace with mock data)
+## Requirements
+| ID | Requirement | State (CONFIRMED/ASSUMED/OPEN/REJECTED) | Notes |
+## Non-goals
+## Open decisions
+```
+
+**architecture.md**
+```
+# <Feature>: Architecture
+Branch / commit:
+## Integration points (path | role | VERIFIED/TO VERIFY)
+## Patterns to reuse
+## Data / contract changes
+## Constraints & risks
+```
+
+**master-plan.md**
+```
+# <Feature>: Master plan
+Approved: no | <date>
+| Task | Behavior | Depends on | Status |
+## Verified commands
+## Risks
+```
+
+**tasks/Txx-<slug>.md**
+```
+# Txx: <behavior>
+Status: not_started
+Depends on: | Requirements: R1, R3
+## Objective
+## Scope (in / out)
+## Acceptance criteria
+- Given … When … Then …
+## Tests
+## Risks
+```
+
+**handoffs/Txx.md**
+```
+# Txx handoff: <date>
+Base commit:
+## Changes (file: why)
+## Out-of-scope integration fixes
+## Checks (EXECUTED/NOT RUN: result)
+## Deviations & open issues
+## Review findings (blocker/important/optional)
+```
+
+**decisions.md**
+```
+## Dxx: <title> (<date>)
+Context: | Decision: | Alternatives: | User-approved: yes/no
+```
+
+**Feature-local SKILL.md**
+```
+# <Feature>: agent instructions
+Workflow and gates: follow the feature-development skill.
+Read in order: requirements.md, architecture.md, master-plan.md, tasks/Txx-*.md, handoffs/Txx.md.
+Feature rules: <conventions, areas not to touch, verified commands>
+```

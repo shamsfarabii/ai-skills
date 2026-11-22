@@ -1,58 +1,87 @@
 ---
 name: systematic-debugging
-description: Interactive, evidence-driven software debugging for an existing codebase. Use when asked to investigate a bug, unexpected behavior, regression, race condition, duplicate API request, stale UI, performance issue, or to understand an existing feature before fixing it. Trace current workflow and data flow, reproduce and isolate symptoms, prove or qualify the root cause, explain it with examples, compare fixes and trade-offs, request approval before code changes, implement focused tests and fixes, independently review the diff, audit edge cases, and produce a verification report.
+description: Evidence-driven debugging for an existing codebase. Use when asked to investigate or fix a bug, unexpected behavior, regression, race condition, duplicate request, stale UI, or performance issue. Trace the relevant code path, reproduce the issue, prove the root cause, propose a focused fix, get approval before editing, then fix and verify (with tests if the project has them, manually if not).
 ---
 
-# Systematic Debugging — Interactive Mode
+# Systematic Debugging
 
-## Mission
-Act as a meticulous senior engineer and teacher. Prioritize correctness, security, clarity, then performance. The objective is not merely to make symptoms disappear: establish how the current feature works, identify the causal defect with evidence, teach the user why it occurs, select a proportional fix, and verify the behavior. Never pretend to have inspected a file, executed a test, or proven a cause when you have not.
+## Goal
+Find the real cause of the bug, fix it with the smallest correct change, and prove the fix works. Don't just make the symptom disappear.
 
-## Inputs and initialization
-Start with the user's issue report, relevant repo/branch or files, runtime/environment, and any reproduction clues. Inspect accessible source rather than guessing architecture. Ask one targeted question only if the lack of an essential detail blocks useful investigation; otherwise state assumptions and proceed. Respect repository instructions, existing conventions, and changes already present in the worktree. Record `git status` and baseline before modifying anything. Avoid destructive commands, external writes, production mutations, or exposure of secrets.
+## Ground rules
+- **Never fake evidence.** Don't claim you read a file, ran a test, or proved a cause unless you did. Cite real `path:line` locations and real command output.
+- **Label confidence** on every claim: **Confirmed** (proven by code or runtime evidence), **Likely** (strong but unproven), or **Unknown**.
+- **Read-only until approved.** Inspect code, run safe commands, and run local tests freely. Do not edit code until the user approves the fix.
+- **Be safe.** Run `git status` first and keep the user's existing changes. No destructive commands, production writes, or exposed secrets.
+- **Ask only when blocked.** If a missing detail blocks progress, ask one specific question. Otherwise state your assumption and keep going.
 
-Track a short phase ledger: `phase`, `observations`, `hypotheses`, `evidence`, `decision`, `verification`, `open risks`. Keep evidence links as `path:line`, test output, trace/event sequence, or reproducible steps; never fabricate line numbers. Separate **Observed**, **Inferred**, **Hypothesis**, **Confirmed**, and **Unknown**.
+---
 
-## Interactive phase gates
-STOP and wait for explicit user confirmation after:
-1. **Workflow gate**: Current behavior and data flow explained; ask whether the user understands and wants root-cause investigation.
-2. **Diagnosis gate**: Reproduction, competing hypotheses, evidence and suspected/confirmed cause explained; ask whether to move to solution design (if uncertain, request investigation approval instead).
-3. **Solution gate**: Compared alternatives and shown recommended plan with blast radius, tests and risks; ask for implementation approval.
-4. **Review gate**: Implemented change and reported test/review results; ask before any follow-up refactoring or scope expansion.
+## Step 1 — Understand the code path
+Trace only the path the bug travels through: entry point → component/handler → state → API/service → storage → output. Follow real call sites, not names or comments.
 
-Within each phase, independently inspect code, run safe read-only commands, or run appropriate local tests without asking permission for each small step. Never interpret vague conversation as approval to modify code. If the user explicitly requests a read-only diagnosis, stop before edits. If a phase is blocked, present partial evidence and blocker; do not silently leap over gates. A critical safety issue may require immediate warning and avoiding further unsafe execution.
+Note anything that commonly causes bugs along the way: async calls, effects, caching, retries, timers, listeners, cleanup, feature flags.
 
-## Phase 1 — Understand the existing feature BEFORE debugging
-Map the user entry point to relevant route/component, hooks/state, service/API, backend path, persistence, async events, and output. Follow actual call sites and data transformations rather than relying on names or comments. Identify key invariants, loading/error/empty states, retry/cache/invalidation behavior, timers/listeners, and cleanup. Distinguish client and server state; note environmental toggles and feature flags.
+**Check for a test setup.** Look for a test runner config or script (for example, a `test` script in `package.json`, `jest`/`vitest`/`pytest` config, or a `tests/` or `__tests__/` folder). Note in one line whether tests exist. If they don't, skip every test step below and use manual verification instead. Don't add a test framework unless the user asks.
 
-Deliver, in accessible language:
-- What the feature is meant to accomplish, with its inputs and outputs.
-- Ordered happy-path walkthrough and a small mock-data example (mark synthetic data).
-- Compact text or Mermaid sequence/data-flow diagram if helpful.
-- Table of significant files/functions with specific responsibility and cited location.
-- State transitions, lifecycle boundaries, dependencies, and areas not yet understood.
-- **Workflow gate** question. Do not diagnose or edit before the user's confirmation.
+**Output (keep it short):**
+- 2–4 sentences on what the feature should do
+- The execution path as a numbered list or small diagram, with `path:line` refs
+- Test setup: found / not found
 
-## Phase 2 — Define and reproduce the issue
-Turn the report into explicit **expected vs actual** behavior and measurable failure criteria. Determine environment, preconditions, minimal steps, frequency, scope, and regression window if known. Use low-risk reproduction, logs/traces, network requests, tests, or instrumentation. Check whether the issue reproduces on baseline; do not assume it does. If reproduction is unavailable, label it **Not reproduced**, explain why, and move to evidence inspection only with appropriate caveats.
+## Step 2 — Reproduce
+- Write **Expected vs Actual** in one line each.
+- Find the minimal steps, environment, and frequency (always / sometimes / once).
+- Reproduce it:
+  - **If tests exist:** write a failing test. It becomes your regression test later.
+  - **If no tests:** reproduce it with clear manual steps, a small script, logs, or a network trace. Write down the exact steps so you can repeat them after the fix.
+- If you can't reproduce it, say **Not reproduced**, explain why, and continue from code evidence with that caveat.
 
-## Phase 3 — Investigate hypotheses and establish root cause
-Read `references/investigation.md` for detailed investigation patterns. Build multiple plausible hypotheses when meaningful; define a falsifiable prediction for each. Trace chronological execution including async boundaries, closures, effects, queries, subscriptions, user interactions and data consistency. Use discriminating evidence to reject alternatives, not just confirm the favorite explanation. Distinguish triggering conditions, proximal defect and systemic factors. For a claimed confirmed cause, show the causal chain `trigger → state/event → wrong decision → symptom`, linked to real code and/or observed runtime evidence. If not proven, mark **Likely** or **Unknown** explicitly.
+## Step 3 — Find the root cause
+1. List 2–3 plausible hypotheses. For each, write what you'd expect to see if it were true.
+2. Check the evidence that tells them apart: logs, breakpoints, a targeted test, or a git diff/bisect if it's a regression. Rule hypotheses out; don't just look for support for your favorite.
+3. Write the causal chain:
+   `trigger → wrong state/event → wrong decision → symptom`
+   Link each link to code or runtime evidence.
 
-## Phase 4 — Teach the diagnosis and pause
-Explain why the code exists, what problem it originally solves, why the failure occurs, and when it occurs. Use before/after event timelines and small synthetic inputs with intermediate state; explain concepts such as stale closures or races in plain English (or the user's preferred language). Show the smallest counterexample. Deliver evidence and open questions, then request the **Diagnosis gate** approval.
+**Common culprits to check:** stale closures, race conditions or out-of-order responses, missing cleanup or cancellation, duplicate effect or listener registration, wrong cache keys or missing invalidation, null/empty/error paths, off-by-one errors, timezone or locale handling, type coercion, environment or config differences.
 
-## Phase 5 — Compare fixes and get approval
-Read `references/solution-review.md`. Compare a minimal fix against at least one credible alternative where alternatives actually exist. Evaluate correctness, safety, scope, complexity, maintenance, runtime and regression risk; explicitly consider whether a guard hides the symptom. Prefer the narrowest fix that restores the intended invariant. State files to change, tests to add, migration/backward-compatibility implications, and rollback plan. No speculative cleanup or unrelated refactor. Recommend one option with rationale; **STOP for Solution gate**.
+> If the cause is still only **Likely** or **Unknown**, stop and tell the user what you found, what's unclear, and what you'd check next. Ask whether to keep investigating.
 
-## Phase 6 — Implement approved scope and test
-After explicit approval, preserve unrelated edits, write or adapt the smallest regression test that fails before the fix when feasible, then implement the approved change. Follow repo conventions, strict typing, schema validation at trust boundaries, authN/authZ separation, cancellation/cleanup, stable query keys and cache semantics, safe network timeouts/retries where relevant. Avoid extra dependencies without justification. Make the implementation resilient to empty/error/race/retry paths without broad architecture changes. Do not fabricate passing test output. Run targeted tests first, then relevant lint/typecheck/integration tests if available. If changing the plan becomes necessary, explain and request approval before expanding scope.
+## Step 4 — Propose the fix ⛔ STOP for approval
+Present briefly:
+- **Root cause** in plain language, with a tiny before/after example or timeline.
+- **Recommended fix**: the smallest change that restores the correct behavior. Say which files change, and either the test you'll add or, if there are no tests, how you'll verify it manually.
+- **Alternative**, if a real one exists, with one line on why you didn't choose it.
+- **Risk**: what else uses this code, and what could break.
 
-## Phase 7 — Independent code and regression review
-Read `references/solution-review.md` and `references/report-template.md`. Review the *actual diff* as if authored by somebody else. Check: root-cause correction vs workaround, correctness/invariants, concurrency ordering, stale state, lifecycle cleanup, error and retry behavior, idempotency, security, type safety, API compatibility, performance, accessibility if UI, test design, and unrelated edits. Trace affected call sites and shared utilities to identify blast radius; verify that existing feature behavior is preserved. Classify findings `Critical/High/Medium/Low`, with concrete location, repro scenario, and suggested fix. Clearly state what was tested vs manually inspected vs unverified. Fix defects within approved scope; request approval for unrelated improvements. Present the **Review gate**.
+Ask: **"Should I implement this fix?"**
+A vague "ok" or "continue" is not approval to edit. Get a clear yes.
 
-## Phase 8 — Final report
-Use `references/report-template.md` as the report structure. Include symptom, workflow summary, reproduction status, root-cause confidence and evidence, selected solution and rejected alternatives, exact change summary, test matrix including edge cases, review findings, residual risk, and next actions. Never claim “all edge cases tested”: describe the tested universe and gaps. Include actual commands/results if run, or `Not run (reason)`. End with a concise explanation of the lesson learned.
+Watch out for fixes that only hide the symptom, such as an extra guard, a debounce, or a try/catch that swallows the error. Fix the cause unless there's a stated reason not to.
 
-## Communication contract
-Be structured but conversational. At the beginning of each phase give a 1–3 sentence objective. Explain code in the order it executes. Favor short concrete examples over theory and avoid dumping unchanged files. Use path:line and focused snippets for inspection, showing only changed lines for proposed edits. Prefer practical evidence over confident speculation. Preserve user control while avoiding redundant questions. If a user says “continue” at a gate, treat it as approval for the *next analysis phase* only, not code changes unless the solution gate explicitly requested implementation approval.
+## Step 5 — Fix and verify
+1. **Before the fix:**
+   - **If tests exist:** write or keep the failing test from Step 2 and confirm it fails.
+   - **If no tests:** skip this. Keep your manual repro steps ready.
+2. **Apply only the approved change.** Follow repo conventions. No unrelated refactors and no new dependencies without a reason.
+3. **Verify:**
+   - **If tests exist:** run the targeted test first, then related tests, lint, and typecheck if available.
+   - **If no tests:** repeat the manual repro steps and confirm the bug is gone. Then check one or two nearby behaviors to make sure they still work. Still run lint, typecheck, or build if the project has them.
+4. **Review your own diff** as if someone else wrote it:
+   - Does it fix the cause, or just hide the symptom?
+   - Does it handle empty, error, retry, and concurrent cases?
+   - Are other callers of the changed code still correct?
+   - Are there any leftover debug logs or unrelated edits?
+5. If the fix needs to grow beyond the approved scope, stop and ask first.
+
+## Final summary
+Keep it short:
+- **Bug:** expected vs actual
+- **Root cause:** one or two sentences, with confidence level and `path:line`
+- **Fix:** what changed and why
+- **Verification:** test commands and results, or "No test setup — verified manually:" followed by the steps you ran and what you saw
+- **Not covered:** remaining risks or untested cases
+- **Lesson:** one sentence on what caused this class of bug
+
+Never say "all edge cases tested." Say what was verified and what wasn't.
